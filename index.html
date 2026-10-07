@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1B6784">
+<link rel="manifest" href="manifest.webmanifest">
+<title>Inventura</title>
+<style>
+:root{
+  --bg:#E8ECEF; --surface:#FFFFFF; --ink:#17202A; --muted:#5C6773; --line:#C9D1D8;
+  --accent:#1B6784; --on-accent:#FFFFFF; --accent-soft:#DCEBF1; --linka:#7A4E12; --linka-soft:#F4E7D3;
+  --neg:#B42318; --pos:#2E7650; --warn:#8A5A00;
+  font-family:"Segoe UI",Roboto,system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink)}
+body{padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+button,input{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.horni{position:sticky;top:0;z-index:5;background:var(--surface);border-bottom:1px solid var(--line);padding:10px 14px}
+.radek{display:flex;align-items:center;gap:10px}
+.horni h1{margin:0;font-size:20px;flex:1}
+.stav{font-size:13px;color:var(--muted)}
+.stav b{color:var(--ink)}
+.stav.offline b{color:var(--neg)}
+.ikona{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:6px 10px;font-size:14px}
+.rezim{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}
+.rezim button{padding:12px 6px;border:2px solid var(--line);border-radius:10px;background:var(--surface);font-weight:700;font-size:16px}
+.rezim button[aria-pressed=true]{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.rezim button.linka[aria-pressed=true]{border-color:var(--linka);background:var(--linka-soft);color:var(--linka)}
+
+main{padding:14px;max-width:560px;margin:0 auto}
+.karta{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px}
+.karta.linka{border-color:var(--linka);box-shadow:inset 0 4px 0 var(--linka)}
+.tlacitka{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.velke{padding:18px 8px;border-radius:12px;border:2px solid var(--accent);background:var(--accent);color:var(--on-accent);font-size:19px;font-weight:700}
+.velke.druhe{background:var(--surface);color:var(--accent)}
+label{display:block;font-weight:700;font-size:14px;margin:12px 0 4px}
+.pole{width:100%;padding:14px 12px;font-size:20px;border:2px solid var(--line);border-radius:10px;background:#fff;font-family:"Bahnschrift","Roboto Mono",monospace}
+.pole:focus{border-color:var(--accent);outline:none}
+.pole.velikost{font-size:28px;text-align:right}
+.upozorneni{min-height:18px;margin:4px 0 0;font-size:13px;color:var(--warn)}
+.odeslat{width:100%;margin-top:16px;padding:18px;border:0;border-radius:12px;background:var(--pos);color:#fff;font-size:21px;font-weight:700}
+.odeslat[disabled]{opacity:.5}
+.nezde{width:100%;margin-top:8px;padding:12px;border:2px solid var(--line);border-radius:12px;background:var(--surface);font-size:16px;font-weight:700}
+
+.banner{display:none;margin:0 0 12px;padding:12px;border-radius:10px;font-weight:600}
+.banner.zobrazit{display:block}
+.banner.chyba{background:#FDECEA;color:var(--neg)}
+.banner.info{background:var(--accent-soft);color:var(--accent)}
+
+h2{font-size:16px;margin:22px 0 8px}
+.zaznamy{list-style:none;padding:0;margin:0;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.zaznamy li{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:10px 12px;border-bottom:1px solid var(--line);font-size:14px}
+.zaznamy li:last-child{border-bottom:0}
+.zaznamy .co{font-weight:700;font-family:"Bahnschrift","Roboto Mono",monospace;word-break:break-all}
+.zaznamy .kde{color:var(--muted);font-size:13px}
+.zaznamy .stavz{grid-row:1 / span 2;grid-column:2;align-self:center;font-size:13px;font-weight:700}
+.zaznamy .ok{color:var(--pos)} .zaznamy .ceka{color:var(--warn)}
+.prazdne{padding:16px;color:var(--muted);text-align:center}
+
+/* Escáner */
+.skener{position:fixed;inset:0;z-index:20;background:#000;display:none;flex-direction:column}
+.skener.otevreno{display:flex}
+.skener video{flex:1;width:100%;object-fit:cover}
+.ramecek{position:absolute;left:50%;top:45%;width:min(70vw,320px);aspect-ratio:1;transform:translate(-50%,-50%);border:3px solid #fff;border-radius:16px;box-shadow:0 0 0 9999px rgba(0,0,0,.35);pointer-events:none}
+.skener .dole{padding:14px;display:flex;gap:10px;align-items:center;background:#000;color:#fff}
+.skener .dole p{flex:1;margin:0;font-size:14px}
+.skener button{padding:14px 18px;border-radius:10px;border:0;font-size:17px;font-weight:700}
+
+/* Ajustes */
+.nastaveni{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;padding:16px}
+.nastaveni.otevreno{display:flex}
+.nastaveni .karta{width:100%;max-width:420px}
+.nastaveni h2{margin-top:0}
+
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:40;max-width:90vw;background:var(--ink);color:#fff;padding:12px 18px;border-radius:10px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.visible{opacity:1}
+</style>
+</head>
+<body>
+
+<header class="horni">
+  <div class="radek">
+    <h1>Inventura</h1>
+    <button class="ikona" id="btnNastaveni" aria-label="Nastavení">Kód</button>
+  </div>
+  <div class="stav" id="stav">Připojení: <b>–</b></div>
+  <div class="rezim" role="group" aria-label="Režim">
+    <button id="rSklad" aria-pressed="true">Sklad</button>
+    <button id="rLinka" class="linka" aria-pressed="false">Montážní linka</button>
+  </div>
+</header>
+
+<main>
+  <div id="banner" class="banner" role="alert"></div>
+
+  <section id="formular" class="karta">
+    <div class="tlacitka">
+      <button class="velke" id="btnSken">Skenovat</button>
+      <button class="velke druhe" id="btnRucne">Ručně</button>
+    </div>
+
+    <div id="blokLokace">
+      <label for="lokace">Lokace</label>
+      <input id="lokace" class="pole" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="např. A11">
+      <p class="upozorneni" id="varLokace"></p>
+    </div>
+
+    <label for="dil">Číslo dílu</label>
+    <input id="dil" class="pole" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="např. M-1510343">
+
+    <label for="pocet">Počet kusů</label>
+    <input id="pocet" class="pole velikost" type="text" inputmode="decimal" autocomplete="off" placeholder="0">
+
+    <button class="odeslat" id="btnOdeslat">Odeslat</button>
+    <button class="nezde" id="btnNeniZde">Není zde (0 ks)</button>
+  </section>
+
+  <h2>Poslední záznamy z tohoto telefonu</h2>
+  <ul class="zaznamy" id="zaznamy"></ul>
+</main>
+
+<div class="skener" id="skener" aria-label="Skenování QR kódu">
+  <video id="video" playsinline muted></video>
+  <div class="ramecek"></div>
+  <div class="dole">
+    <p id="skenInfo">Namiřte kameru na QR kód.</p>
+    <button id="btnZavritSken">Zavřít</button>
+  </div>
+</div>
+
+<div class="nastaveni" id="nastaveni" role="dialog" aria-label="Kód inventury">
+  <div class="karta">
+    <h2>Kód inventury</h2>
+    <p style="margin:0 0 6px;color:var(--muted);font-size:14px">Zadejte kód, který dostanete od vedoucího inventury. Stačí jednou.</p>
+    <input id="klic" class="pole" autocomplete="off" spellcheck="false">
+    <button class="odeslat" id="btnUlozitKlic">Uložit</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+
+<canvas id="platno" hidden></canvas>
+<script src="jsQR.js"></script>
+<script>
+// ===== Configuración: URL de la aplicación web de Apps Script (termina en /exec) =====
+const SKRIPT_URL = 'https://script.google.com/macros/s/AKfycbyzb-vzz7xKLqTr7nAmad-ghS-mqGyAzaFwgQqLIe9pDN168ZtctOR-dQs_Hpjt87Ys/exec';
+// ====================================================================================
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const LOKACE = /^[A-Z][1-5][1-4]$/;
+
+// ---------- Estado guardado en el teléfono ----------
+const uloz = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+const nacti = (k, vychozi) => { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? vychozi; } catch { return vychozi; } };
+let klic = nacti('inv.klic', '');
+let rezim = nacti('inv.rezim', 'sklad');
+let fronta = nacti('inv.fronta', []);        // pendientes de enviar
+let historie = nacti('inv.historie', []);    // últimos 30 registros de este teléfono
+
+function noveId() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+}
+
+let tToast;
+function toast(t) { $('toast').textContent = t; $('toast').classList.add('visible'); clearTimeout(tToast); tToast = setTimeout(() => $('toast').classList.remove('visible'), 2500); }
+function banner(text, typ = 'chyba') { const b = $('banner'); b.textContent = text || ''; b.className = 'banner' + (text ? ` zobrazit ${typ}` : ''); }
+
+// ---------- Modo ----------
+function nastavitRezim(r) {
+  rezim = r; uloz('inv.rezim', r);
+  $('rSklad').setAttribute('aria-pressed', r === 'sklad');
+  $('rLinka').setAttribute('aria-pressed', r === 'linka');
+  $('blokLokace').hidden = r === 'linka';
+  $('formular').classList.toggle('linka', r === 'linka');
+  $('btnNeniZde').hidden = r === 'linka';
+}
+$('rSklad').onclick = () => nastavitRezim('sklad');
+$('rLinka').onclick = () => nastavitRezim('linka');
+
+// ---------- Formulario ----------
+$('lokace').addEventListener('input', () => {
+  const v = $('lokace').value.trim().toUpperCase();
+  $('varLokace').textContent = v && !LOKACE.test(v) ? 'Lokace nemá obvyklý tvar (A11–Z54). Lze ji přesto odeslat.' : '';
+});
+$('btnRucne').onclick = () => {
+  if (rezim === 'sklad' && !$('lokace').value.trim()) $('lokace').focus();
+  else { $('dil').value = ''; $('pocet').value = ''; $('dil').focus(); }
+};
+
+function precist() {
+  const lokace = $('lokace').value.trim().toUpperCase();
+  const dil = $('dil').value.trim();
+  const pocetText = $('pocet').value.trim().replace(',', '.');
+  const pocet = Number(pocetText);
+  if (rezim === 'sklad' && !lokace) return { chyba: 'Vyplňte lokaci.', pole: 'lokace' };
+  if (!dil) return { chyba: 'Vyplňte číslo dílu.', pole: 'dil' };
+  if (pocetText === '' || !isFinite(pocet) || pocet < 0) return { chyba: 'Zadejte počet kusů (0 nebo více).', pole: 'pocet' };
+  return { lokace, dil, pocet };
+}
+
+function pridat(z) {
+  const zaznam = { id: noveId(), rezim, dil: z.dil, pocet: z.pocet, cas: Date.now() };
+  if (rezim === 'sklad') zaznam.lokace = z.lokace;
+  fronta.push(zaznam); uloz('inv.fronta', fronta);
+  historie.unshift({ ...zaznam, odeslano: false }); historie = historie.slice(0, 30); uloz('inv.historie', historie);
+  // Se mantiene la ubicación para seguir contando en la misma posición
+  $('dil').value = ''; $('pocet').value = '';
+  pintar();
+  toast(`Uloženo: ${zaznam.dil} – ${zaznam.pocet} ks`);
+  odeslatFrontu();
+}
+
+$('btnOdeslat').onclick = () => {
+  const z = precist();
+  if (z.chyba) { toast(z.chyba); $(z.pole).focus(); return; }
+  pridat(z);
+};
+$('btnNeniZde').onclick = () => {
+  $('pocet').value = '0';
+  const z = precist();
+  if (z.chyba) { toast(z.chyba); $(z.pole).focus(); return; }
+  pridat(z);
+};
+$('pocet').addEventListener('keydown', e => { if (e.key === 'Enter') $('btnOdeslat').click(); });
+$('dil').addEventListener('keydown', e => { if (e.key === 'Enter') $('pocet').focus(); });
+$('lokace').addEventListener('keydown', e => { if (e.key === 'Enter') $('dil').focus(); });
+
+// ---------- Lista y estado ----------
+function pintar() {
+  const n = fronta.length;
+  const online = navigator.onLine;
+  $('stav').className = 'stav' + (online ? '' : ' offline');
+  $('stav').innerHTML = `Připojení: <b>${online ? 'online' : 'offline'}</b>` + (n ? ` · Čeká na odeslání: <b>${n}</b>` : ' · Vše odesláno');
+  $('zaznamy').innerHTML = historie.length ? historie.map(h => `
+    <li><span class="co">${esc(h.dil)} – ${esc(h.pocet)} ks</span>
+      <span class="stavz ${h.odeslano ? 'ok' : 'ceka'}">${h.odeslano ? 'Odesláno' : 'Čeká'}</span>
+      <span class="kde">${h.rezim === 'linka' ? 'Montážní linka' : 'Lokace ' + esc(h.lokace)} · ${new Date(h.cas).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })}</span></li>`).join('')
+    : '<li class="prazdne">Zatím žádné záznamy.</li>';
+}
+
+// ---------- Envío (cola: lo no enviado se reintenta solo) ----------
+let odesilam = false;
+async function odeslatFrontu() {
+  if (odesilam || !fronta.length) return;
+  if (!klic) { otevritNastaveni(); return; }
+  if (SKRIPT_URL.startsWith('VLOZTE')) { banner('Aplikace ještě není nastavena (chybí adresa skriptu).'); return; }
+  odesilam = true;
+  const davka = fronta.slice(0, 50);
+  try {
+    const res = await fetch(SKRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // petición simple: sin bloqueos de CORS
+      body: JSON.stringify({ klic, zaznamy: davka }),
+      redirect: 'follow',
+    });
+    const r = await res.json();
+    if (!r.ok) {
+      if (r.spatnyKlic) { banner('Neplatný kód inventury. Klepněte na „Kód“ a zadejte správný kód. Záznamy zůstávají uložené v telefonu.'); }
+      else if (r.uzavreno) { banner('Inventura je uzavřená. Záznamy zůstávají uložené v telefonu.'); }
+      else banner(r.chyba || 'Chyba serveru.');
+    } else {
+      banner('');
+      const prijato = new Set(r.prijato || []);
+      fronta = fronta.filter(z => !prijato.has(z.id)); uloz('inv.fronta', fronta);
+      historie.forEach(h => { if (prijato.has(h.id)) h.odeslano = true; }); uloz('inv.historie', historie);
+    }
+  } catch (e) {
+    // Sin conexión o error de red: se reintenta más tarde, nada se pierde
+  } finally {
+    odesilam = false;
+    pintar();
+  }
+  if (fronta.length && navigator.onLine) setTimeout(odeslatFrontu, 3000);
+}
+setInterval(odeslatFrontu, 10000);
+window.addEventListener('online', () => { pintar(); odeslatFrontu(); });
+window.addEventListener('offline', pintar);
+
+// ---------- Código de inventario ----------
+function otevritNastaveni() { $('klic').value = klic; $('nastaveni').classList.add('otevreno'); $('klic').focus(); }
+$('btnNastaveni').onclick = otevritNastaveni;
+$('btnUlozitKlic').onclick = () => {
+  klic = $('klic').value.trim(); uloz('inv.klic', klic);
+  $('nastaveni').classList.remove('otevreno');
+  banner(''); odeslatFrontu();
+};
+
+// ---------- Escáner QR ----------
+// Usa el lector nativo de Chrome (BarcodeDetector) si existe; si no, jsQR.
+let proud = null, smycka = null, detektor = null;
+async function otevritSkener() {
+  $('skenInfo').textContent = 'Namiřte kameru na QR kód.';
+  $('skener').classList.add('otevreno');
+  try {
+    proud = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+  } catch (e) {
+    zavritSkener();
+    toast('Kamera není dostupná. Zadejte údaje ručně.');
+    $('btnRucne').click();
+    return;
+  }
+  const v = $('video');
+  v.srcObject = proud;
+  await v.play();
+  if ('BarcodeDetector' in window) {
+    try { detektor = new BarcodeDetector({ formats: ['qr_code'] }); } catch { detektor = null; }
+  }
+  const platno = $('platno'), ctx = platno.getContext('2d', { willReadFrequently: true });
+  const krok = async () => {
+    if (!proud) return;
+    let text = null;
+    try {
+      if (detektor) {
+        const kody = await detektor.detect(v);
+        if (kody.length) text = kody[0].rawValue;
+      } else if (v.videoWidth) {
+        platno.width = v.videoWidth; platno.height = v.videoHeight;
+        ctx.drawImage(v, 0, 0);
+        const obr = ctx.getImageData(0, 0, platno.width, platno.height);
+        const kod = jsQR(obr.data, obr.width, obr.height, { inversionAttempts: 'dontInvert' });
+        if (kod) text = kod.data;
+      }
+    } catch {}
+    if (text) { zpracovatKod(text); return; }
+    smycka = requestAnimationFrame(krok);
+  };
+  smycka = requestAnimationFrame(krok);
+}
+function zavritSkener() {
+  cancelAnimationFrame(smycka);
+  if (proud) proud.getTracks().forEach(t => t.stop());
+  proud = null;
+  $('skener').classList.remove('otevreno');
+}
+// "A11|M-1510343" rellena ubicación y artículo; un número solo rellena el artículo
+function zpracovatKod(text) {
+  zavritSkener();
+  if (navigator.vibrate) navigator.vibrate(80);
+  const t = String(text).trim();
+  const i = t.indexOf('|');
+  if (i >= 0) {
+    const lok = t.slice(0, i).trim().toUpperCase(), dil = t.slice(i + 1).trim();
+    if (rezim === 'sklad') { $('lokace').value = lok; $('lokace').dispatchEvent(new Event('input')); }
+    $('dil').value = dil;
+  } else {
+    $('dil').value = t;
+  }
+  $('pocet').value = '';
+  $('pocet').focus();
+}
+$('btnSken').onclick = otevritSkener;
+$('btnZavritSken').onclick = zavritSkener;
+
+// ---------- Inicio ----------
+nastavitRezim(rezim);
+pintar();
+if (!klic) otevritNastaveni(); else odeslatFrontu();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>

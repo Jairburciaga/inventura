@@ -1,0 +1,14 @@
+{
+  "name": "Inventura",
+  "short_name": "Inventura",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#E8ECEF",
+  "theme_color": "#1B6784",
+  "lang": "cs",
+  "icons": [
+    { "src": "ikona-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "ikona-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
