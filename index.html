@@ -71,6 +71,9 @@ h2{font-size:16px;margin:22px 0 8px}
 .skener .dole{padding:14px;display:flex;gap:10px;align-items:center;background:#000;color:#fff}
 .skener .dole p{flex:1;margin:0;font-size:14px}
 .skener button{padding:14px 18px;border-radius:10px;border:0;font-size:17px;font-weight:700}
+.skener .ovladace{position:absolute;left:0;right:0;bottom:84px;display:flex;justify-content:center;gap:8px;flex-wrap:wrap;padding:0 10px}
+.skener .ovladace button{padding:10px 14px;font-size:15px;background:rgba(255,255,255,.85);color:#000}
+.skener .ovladace button[aria-pressed=true]{background:#4CD964}
 
 /* Ajustes */
 .nastaveni{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;padding:16px}
@@ -129,6 +132,7 @@ h2{font-size:16px;margin:22px 0 8px}
   <video id="video" playsinline muted></video>
   <div class="ramecek" id="ramecek"></div>
   <div class="nahled" id="nahled"></div>
+  <div class="ovladace" id="ovladace"></div>
   <div class="dole">
     <p id="skenInfo">Umístěte jeden QR kód do rámečku a chvíli podržte.</p>
     <button id="btnZavritSken">Zavřít</button>
@@ -368,7 +372,7 @@ async function otevritSkener() {
   kandidat = null;
   $('skener').classList.add('otevreno');
   try {
-    proud = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    proud = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
   } catch (e) {
     zavritSkener();
     toast('Kamera není dostupná. Zadejte údaje ručně.');
@@ -379,6 +383,7 @@ async function otevritSkener() {
   v.srcObject = proud;
   await v.play();
   otevrenoV = performance.now();
+  nastavitKameru(proud.getVideoTracks()[0]);
   if ('BarcodeDetector' in window) {
     try { detektor = new BarcodeDetector({ formats: ['qr_code'] }); } catch { detektor = null; }
   }
@@ -417,27 +422,67 @@ async function otevritSkener() {
   };
   smycka = requestAnimationFrame(krok);
 }
+// Códigos pequeños: en vez de acercar mucho el teléfono (y que no enfoque),
+// se usa el zoom de la cámara. Botones solo si el teléfono los admite.
+async function nastavitKameru(stopa) {
+  const ov = $('ovladace');
+  ov.innerHTML = '';
+  if (!stopa || !stopa.getCapabilities) return;
+  const moz = stopa.getCapabilities();
+  try {
+    if (moz.focusMode && moz.focusMode.includes('continuous')) await stopa.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+  } catch {}
+  if (moz.zoom && moz.zoom.max > 1) {
+    const urovne = [1, 2, 3, 4].filter(z => z >= moz.zoom.min && z <= moz.zoom.max);
+    const nastav = async z => {
+      try { await stopa.applyConstraints({ advanced: [{ zoom: z }] }); } catch {}
+      ov.querySelectorAll('[data-zoom]').forEach(b => b.setAttribute('aria-pressed', +b.dataset.zoom === z));
+    };
+    urovne.forEach(z => {
+      const b = document.createElement('button');
+      b.textContent = `${z}×`; b.dataset.zoom = z; b.setAttribute('aria-pressed', z === 1);
+      b.onclick = () => nastav(z);
+      ov.appendChild(b);
+    });
+  }
+  if (moz.torch) {
+    const b = document.createElement('button');
+    let zap = false;
+    b.textContent = 'Světlo'; b.setAttribute('aria-pressed', 'false');
+    b.onclick = async () => { zap = !zap; try { await stopa.applyConstraints({ advanced: [{ torch: zap }] }); } catch {} b.setAttribute('aria-pressed', zap); };
+    ov.appendChild(b);
+  }
+}
 function zavritSkener() {
   cancelAnimationFrame(smycka);
   if (proud) proud.getTracks().forEach(t => t.stop());
   proud = null;
   $('skener').classList.remove('otevreno');
 }
-// "A11|M-1510343" rellena ubicación y artículo; un número solo rellena el artículo
+// Formatos de código:
+//   "A11|M-1510343"  nuestro štítek de almacén: ubicación + artículo
+//   "M-1510343;POS"  códigos externos: solo cuenta el artículo (la posición se ignora)
+//   "M-1510343"      solo el artículo
+// La ubicación solo se usa en modo Sklad y solo con nuestro formato.
+function rozebratKod(text) {
+  const t = String(text).replace(/[\r\n\t]+/g, '').trim();
+  const i = t.indexOf('|');
+  if (i >= 0) return { lokace: t.slice(0, i).trim().toUpperCase(), dil: t.slice(i + 1).trim() };
+  const j = t.indexOf(';');
+  if (j >= 0) return { lokace: null, dil: t.slice(0, j).trim() };
+  return { lokace: null, dil: t };
+}
+
 function zpracovatKod(text) {
   zavritSkener();
   if (navigator.vibrate) navigator.vibrate(80);
-  const t = String(text).trim();
-  const i = t.indexOf('|');
-  if (i >= 0) {
-    const lok = t.slice(0, i).trim().toUpperCase(), dil = t.slice(i + 1).trim();
-    if (rezim === 'sklad') { $('lokace').value = lok; $('lokace').dispatchEvent(new Event('input')); }
-    $('dil').value = dil;
-  } else {
-    $('dil').value = t;
-  }
+  const k = rozebratKod(text);
+  $('dil').value = k.dil;
+  if (rezim === 'sklad' && k.lokace) { $('lokace').value = k.lokace; $('lokace').dispatchEvent(new Event('input')); }
   $('pocet').value = '';
-  $('pocet').focus();
+  // En almacén, si el código no trae ubicación y aún no hay ninguna, se pide primero
+  if (rezim === 'sklad' && !$('lokace').value.trim()) { toast('Kód neobsahuje lokaci – doplňte ji.'); $('lokace').focus(); }
+  else $('pocet').focus();
 }
 $('btnSken').onclick = otevritSkener;
 $('btnZavritSken').onclick = zavritSkener;
