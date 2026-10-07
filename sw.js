@@ -1,6 +1,6 @@
 // Guarda la página en el teléfono para que se abra también sin conexión.
 // Al publicar una versión nueva, cambiar VERZE.
-const VERZE = 'inventura-v1';
+const VERZE = 'inventura-v3';
 const SOUBORY = ['./', './index.html', './jsQR.js', './manifest.webmanifest', './ikona-192.png', './ikona-512.png'];
 
 self.addEventListener('install', e => {

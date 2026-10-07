@@ -64,7 +64,10 @@ h2{font-size:16px;margin:22px 0 8px}
 .skener{position:fixed;inset:0;z-index:20;background:#000;display:none;flex-direction:column}
 .skener.otevreno{display:flex}
 .skener video{flex:1;width:100%;object-fit:cover}
-.ramecek{position:absolute;left:50%;top:45%;width:min(70vw,320px);aspect-ratio:1;transform:translate(-50%,-50%);border:3px solid #fff;border-radius:16px;box-shadow:0 0 0 9999px rgba(0,0,0,.35);pointer-events:none}
+.ramecek{position:absolute;left:50%;top:45%;width:min(55vw,260px);aspect-ratio:1;transform:translate(-50%,-50%);border:4px solid #fff;border-radius:16px;box-shadow:0 0 0 9999px rgba(0,0,0,.45);pointer-events:none;transition:border-color .15s}
+.ramecek.drzi{border-color:#4CD964}
+.ramecek.vice{border-color:#FF9F0A}
+.skener .nahled{position:absolute;left:0;right:0;top:calc(45% + min(27.5vw,130px) + 14px);text-align:center;color:#fff;font:700 16px "Roboto Mono",monospace;text-shadow:0 1px 3px #000;padding:0 12px;word-break:break-all}
 .skener .dole{padding:14px;display:flex;gap:10px;align-items:center;background:#000;color:#fff}
 .skener .dole p{flex:1;margin:0;font-size:14px}
 .skener button{padding:14px 18px;border-radius:10px;border:0;font-size:17px;font-weight:700}
@@ -124,9 +127,10 @@ h2{font-size:16px;margin:22px 0 8px}
 
 <div class="skener" id="skener" aria-label="Skenování QR kódu">
   <video id="video" playsinline muted></video>
-  <div class="ramecek"></div>
+  <div class="ramecek" id="ramecek"></div>
+  <div class="nahled" id="nahled"></div>
   <div class="dole">
-    <p id="skenInfo">Namiřte kameru na QR kód.</p>
+    <p id="skenInfo">Umístěte jeden QR kód do rámečku a chvíli podržte.</p>
     <button id="btnZavritSken">Zavřít</button>
   </div>
 </div>
@@ -136,7 +140,8 @@ h2{font-size:16px;margin:22px 0 8px}
     <h2>Kód inventury</h2>
     <p style="margin:0 0 6px;color:var(--muted);font-size:14px">Zadejte kód, který dostanete od vedoucího inventury. Stačí jednou.</p>
     <input id="klic" class="pole" autocomplete="off" spellcheck="false">
-    <button class="odeslat" id="btnUlozitKlic">Uložit</button>
+    <p id="klicStav" class="upozorneni" role="status"></p>
+    <button class="odeslat" id="btnUlozitKlic">Ověřit a uložit</button>
   </div>
 </div>
 
@@ -216,6 +221,7 @@ function pridat(z) {
 }
 
 $('btnOdeslat').onclick = () => {
+  if (!klic) { otevritNastaveni(); stavKlice('Nejdřív zadejte kód inventury.', false); return; }
   const z = precist();
   if (z.chyba) { toast(z.chyba); $(z.pole).focus(); return; }
   pridat(z);
@@ -235,7 +241,9 @@ function pintar() {
   const n = fronta.length;
   const online = navigator.onLine;
   $('stav').className = 'stav' + (online ? '' : ' offline');
-  $('stav').innerHTML = `Připojení: <b>${online ? 'online' : 'offline'}</b>` + (n ? ` · Čeká na odeslání: <b>${n}</b>` : ' · Vše odesláno');
+  $('stav').innerHTML = `Připojení: <b>${online ? 'online' : 'offline'}</b>`
+    + ` · Kód: <b>${!klic ? 'chybí' : klicOveren ? 'ověřen' : 'neověřen'}</b>`
+    + (n ? ` · Čeká na odeslání: <b>${n}</b>` : ' · Vše odesláno');
   $('zaznamy').innerHTML = historie.length ? historie.map(h => `
     <li><span class="co">${esc(h.dil)} – ${esc(h.pocet)} ks</span>
       <span class="stavz ${h.odeslano ? 'ok' : 'ceka'}">${h.odeslano ? 'Odesláno' : 'Čeká'}</span>
@@ -260,11 +268,12 @@ async function odeslatFrontu() {
     });
     const r = await res.json();
     if (!r.ok) {
-      if (r.spatnyKlic) { banner('Neplatný kód inventury. Klepněte na „Kód“ a zadejte správný kód. Záznamy zůstávají uložené v telefonu.'); }
+      if (r.spatnyKlic) { klicOveren = false; uloz('inv.klicOveren', false); banner('Neplatný kód inventury. Klepněte na „Kód“ a zadejte správný kód. Záznamy zůstávají uložené v telefonu.'); }
       else if (r.uzavreno) { banner('Inventura je uzavřená. Záznamy zůstávají uložené v telefonu.'); }
       else banner(r.chyba || 'Chyba serveru.');
     } else {
       banner('');
+      if (!klicOveren) { klicOveren = true; uloz('inv.klicOveren', true); }
       const prijato = new Set(r.prijato || []);
       fronta = fronta.filter(z => !prijato.has(z.id)); uloz('inv.fronta', fronta);
       historie.forEach(h => { if (prijato.has(h.id)) h.odeslano = true; }); uloz('inv.historie', historie);
@@ -282,22 +291,84 @@ window.addEventListener('online', () => { pintar(); odeslatFrontu(); });
 window.addEventListener('offline', pintar);
 
 // ---------- Código de inventario ----------
-function otevritNastaveni() { $('klic').value = klic; $('nastaveni').classList.add('otevreno'); $('klic').focus(); }
+// Se comprueba en el momento: se envía una petición sin registros y el
+// script responde si el código es válido.
+let klicOveren = nacti('inv.klicOveren', false);
+function otevritNastaveni() {
+  $('klic').value = klic;
+  $('klicStav').textContent = ''; $('klicStav').style.color = '';
+  $('nastaveni').classList.add('otevreno'); $('klic').focus();
+}
 $('btnNastaveni').onclick = otevritNastaveni;
-$('btnUlozitKlic').onclick = () => {
-  klic = $('klic').value.trim(); uloz('inv.klic', klic);
+function stavKlice(text, ok) { $('klicStav').textContent = text; $('klicStav').style.color = ok ? 'var(--pos)' : 'var(--neg)'; }
+
+async function overitKlic(kod) {
+  if (SKRIPT_URL.startsWith('VLOZTE')) return { stav: 'nenastaveno' };
+  try {
+    const res = await fetch(SKRIPT_URL, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ klic: kod, zaznamy: [] }), redirect: 'follow',
+    });
+    const r = await res.json();
+    if (r.ok) return { stav: 'ok' };
+    if (r.uzavreno) return { stav: 'uzavreno' };          // el código es bueno, pero la inventura está cerrada
+    if (r.spatnyKlic) return { stav: 'spatny' };
+    return { stav: 'chyba', text: r.chyba };
+  } catch (e) {
+    return { stav: 'offline' };
+  }
+}
+
+$('btnUlozitKlic').onclick = async () => {
+  const kod = $('klic').value.trim();
+  if (!kod) { stavKlice('Zadejte kód inventury.', false); $('klic').focus(); return; }
+  const b = $('btnUlozitKlic');
+  b.disabled = true; b.textContent = 'Ověřuji…';
+  const v = await overitKlic(kod);
+  b.disabled = false; b.textContent = 'Ověřit a uložit';
+  if (v.stav === 'spatny') { stavKlice('Neplatný kód. Zkontrolujte ho u vedoucího inventury.', false); $('klic').select(); return; }
+  if (v.stav === 'nenastaveno') { stavKlice('Aplikace není nastavena: v index.html chybí adresa skriptu.', false); return; }
+  if (v.stav === 'chyba') { stavKlice(`Chyba: ${v.text || 'neznámá'}`, false); return; }
+  klic = kod; uloz('inv.klic', klic);
+  klicOveren = v.stav === 'ok' || v.stav === 'uzavreno'; uloz('inv.klicOveren', klicOveren);
   $('nastaveni').classList.remove('otevreno');
-  banner(''); odeslatFrontu();
+  if (v.stav === 'ok') { banner(''); toast('Kód ověřen. Můžete začít.'); }
+  else if (v.stav === 'uzavreno') banner('Kód je správný, ale inventura je zatím uzavřená.', 'info');
+  else banner('Kód uložen, ale nyní není připojení. Ověří se při prvním odeslání.', 'info');
+  pintar(); odeslatFrontu();
 };
 
 // ---------- Escáner QR ----------
-// Usa el lector nativo de Chrome (BarcodeDetector) si existe; si no, jsQR.
-let proud = null, smycka = null, detektor = null;
+// Solo se lee lo que está dentro del recuadro (la imagen se recorta antes de leer)
+// y el código tiene que mantenerse estable un momento antes de aceptarse.
+// Lector nativo de Chrome (BarcodeDetector) si existe; si no, jsQR.
+const STABILNI_MS = 600;     // tiempo que el mismo código debe mantenerse en el recuadro
+const ZACATEK_MS = 500;      // pausa tras abrir la cámara, para dar tiempo a apuntar
+let proud = null, smycka = null, detektor = null, otevrenoV = 0, kandidat = null, kandidatOd = 0, kandidatVideno = 0;
+
+function stavRamecku(trida, text) {
+  $('ramecek').className = 'ramecek' + (trida ? ' ' + trida : '');
+  $('nahled').textContent = text || '';
+}
+
+// Zona del vídeo que corresponde al recuadro de la pantalla (el vídeo usa object-fit: cover)
+function vyrezRamecku(v) {
+  const rv = v.getBoundingClientRect(), rr = $('ramecek').getBoundingClientRect();
+  const meritko = Math.max(rv.width / v.videoWidth, rv.height / v.videoHeight);
+  const dx = (rv.width - v.videoWidth * meritko) / 2, dy = (rv.height - v.videoHeight * meritko) / 2;
+  const x = (rr.left - rv.left - dx) / meritko, y = (rr.top - rv.top - dy) / meritko;
+  const w = rr.width / meritko, h = rr.height / meritko;
+  const sx = Math.max(0, Math.round(x)), sy = Math.max(0, Math.round(y));
+  return { sx, sy, sw: Math.min(v.videoWidth - sx, Math.round(w)), sh: Math.min(v.videoHeight - sy, Math.round(h)) };
+}
+
 async function otevritSkener() {
-  $('skenInfo').textContent = 'Namiřte kameru na QR kód.';
+  $('skenInfo').textContent = 'Umístěte jeden QR kód do rámečku a chvíli podržte.';
+  stavRamecku('', '');
+  kandidat = null;
   $('skener').classList.add('otevreno');
   try {
-    proud = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    proud = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
   } catch (e) {
     zavritSkener();
     toast('Kamera není dostupná. Zadejte údaje ručně.');
@@ -307,26 +378,41 @@ async function otevritSkener() {
   const v = $('video');
   v.srcObject = proud;
   await v.play();
+  otevrenoV = performance.now();
   if ('BarcodeDetector' in window) {
     try { detektor = new BarcodeDetector({ formats: ['qr_code'] }); } catch { detektor = null; }
   }
   const platno = $('platno'), ctx = platno.getContext('2d', { willReadFrequently: true });
   const krok = async () => {
     if (!proud) return;
-    let text = null;
+    if (performance.now() - otevrenoV < ZACATEK_MS || !v.videoWidth) { smycka = requestAnimationFrame(krok); return; }
+    let kody = [];
     try {
+      const r = vyrezRamecku(v);
+      platno.width = r.sw; platno.height = r.sh;
+      ctx.drawImage(v, r.sx, r.sy, r.sw, r.sh, 0, 0, r.sw, r.sh);
       if (detektor) {
-        const kody = await detektor.detect(v);
-        if (kody.length) text = kody[0].rawValue;
-      } else if (v.videoWidth) {
-        platno.width = v.videoWidth; platno.height = v.videoHeight;
-        ctx.drawImage(v, 0, 0);
-        const obr = ctx.getImageData(0, 0, platno.width, platno.height);
+        kody = (await detektor.detect(platno)).map(k => k.rawValue);
+      } else {
+        const obr = ctx.getImageData(0, 0, r.sw, r.sh);
         const kod = jsQR(obr.data, obr.width, obr.height, { inversionAttempts: 'dontInvert' });
-        if (kod) text = kod.data;
+        if (kod && kod.data) kody = [kod.data];
       }
     } catch {}
-    if (text) { zpracovatKod(text); return; }
+    const ruzne = [...new Set(kody)];
+    if (ruzne.length > 1) {
+      kandidat = null;
+      stavRamecku('vice', 'V rámečku je více kódů – přibližte se k jednomu.');
+    } else if (ruzne.length === 1) {
+      const t = ruzne[0], ted = performance.now();
+      if (t !== kandidat) { kandidat = t; kandidatOd = ted; }
+      kandidatVideno = ted;
+      stavRamecku('drzi', t);
+      if (ted - kandidatOd >= STABILNI_MS) { zpracovatKod(t); return; }
+    } else {
+      // Un fallo aislado de lectura no reinicia la espera; dos segundos sin leer, sí
+      if (kandidat && performance.now() - kandidatVideno > 2000) { kandidat = null; stavRamecku('', ''); }
+    }
     smycka = requestAnimationFrame(krok);
   };
   smycka = requestAnimationFrame(krok);
@@ -357,6 +443,7 @@ $('btnSken').onclick = otevritSkener;
 $('btnZavritSken').onclick = zavritSkener;
 
 // ---------- Inicio ----------
+if (SKRIPT_URL.startsWith('VLOZTE')) banner('Aplikace není nastavena: v index.html chybí adresa skriptu (SKRIPT_URL).');
 nastavitRezim(rezim);
 pintar();
 if (!klic) otevritNastaveni(); else odeslatFrontu();
